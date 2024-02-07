@@ -16,6 +16,8 @@ from tuf_on_ci._repository import CIRepository
 
 logger = logging.getLogger(__name__)
 
+EXIT_CODE_INCOMPLETE = 201
+EXIT_CODE_ARTIFACTS_NOT_MODIFIED = 202
 
 def _git(cmd: list[str]) -> subprocess.CompletedProcess:
     cmd = [
@@ -165,13 +167,13 @@ def update_targets(verbose: int, push: bool) -> None:
     head = _git(["rev-parse", "HEAD"]).stdout.strip()
 
     if not os.path.exists("metadata/root.json"):
-        sys.exit(1)
+        sys.exit(EXIT_CODE_INCOMPLETE)
 
     # Find the known-good commit
     merge_base = _git(["merge-base", "origin/main", "HEAD"]).stdout.strip()
     if head == merge_base:
         click.echo("This signing event contains no changes yet")
-        sys.exit(1)
+        sys.exit(EXIT_CODE_INCOMPLETE)
 
     with TemporaryDirectory() as known_good_dir:
         _git(["clone", "--quiet", ".", known_good_dir])
@@ -217,7 +219,7 @@ def update_targets(verbose: int, push: bool) -> None:
                 print("Git output on error:", e.stdout, e.stderr)
                 raise e
 
-    sys.exit(0 if updated_targets else 1)
+    sys.exit(0 if updated_targets else EXIT_CODE_ARTIFACTS_NOT_MODIFIED)
 
 
 @click.command()  # type: ignore[arg-type]
@@ -237,13 +239,13 @@ def status(verbose: int) -> None:
             "Repository does not exist yet. Create one with "
             f"`tuf-on-ci-delegate {event_name}`."
         )
-        sys.exit(1)
+        sys.exit(EXIT_CODE_INCOMPLETE)
 
     # Find the known-good commit
     merge_base = _git(["merge-base", "origin/main", "HEAD"]).stdout.strip()
     if head == merge_base:
         click.echo("This signing event contains no changes yet")
-        sys.exit(1)
+        sys.exit(EXIT_CODE_INCOMPLETE)
 
     with TemporaryDirectory() as known_good_dir:
         _git(["clone", "--quiet", ".", known_good_dir])
@@ -271,4 +273,4 @@ def status(verbose: int) -> None:
             if not _role_status(repo, role, event_name):
                 success = False
 
-    sys.exit(0 if success else 1)
+    sys.exit(0 if success else EXIT_CODE_INCOMPLETE)

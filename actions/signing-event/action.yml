@@ -38,38 +38,37 @@ runs:
 
     - id: update_targets
       run: |
-        if tuf-on-ci-update-targets >> status-output;  then
-          echo "targets_updated=true" >> $GITHUB_OUTPUT
-        else
-          echo "targets_updated=false" >> $GITHUB_OUTPUT
-        fi
-        cat status-output
-        cat status-output >> "$GITHUB_STEP_SUMMARY"
+        tuf-on-ci-update-targets >> output.md
+        exit_code=$?
+
+        cat output.md
+        cat output.md >> "$GITHUB_STEP_SUMMARY"
+
+        echo "exit_code=$exit_code" >> GITHUB_OUTPUT
       shell: bash
 
     - id: status
-      if: steps.update_targets.outputs.targets_updated != 'true'
+      # print event status update only when artifact updates were not made
+      if: steps.update_targets.outputs.exit_code == '202'
       run: |
-        if tuf-on-ci-status >> status-output;  then
-          echo "status=success" >> $GITHUB_OUTPUT
-        else
-          echo "status=failure" >> $GITHUB_OUTPUT
-        fi
-        cat status-output
-        cat status-output >> "$GITHUB_STEP_SUMMARY"
+        tuf-on-ci-status >> output.md
+        exit_code=$?
+
+        cat output.md
+        cat output.md >> "$GITHUB_STEP_SUMMARY"
+
+        echo "exit_code=$exit_code" >> GITHUB_OUTPUT
       shell: bash
 
     - id: file-issue
       uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
       env:
-        STATUS: ${{ steps.status.outputs.status }}
+        UPDATE_TARGETS_EXIT_CODE: ${{ steps.update_targets.outputs.exit_code }}
+        STATUS_EXIT_CODE: ${{ steps.status.outputs.exit_code }}
       with:
         github-token: ${{ inputs.token }}
         script: |
           const fs = require('fs')
-          message = fs.readFileSync('./status-output').toString()
-          summary = ''
-
           issue = 0
           const repo = context.repo.owner + "/" + context.repo.repo
           const issues = await github.rest.issues.listForRepo({
@@ -94,19 +93,31 @@ runs:
             console.log("Found existing issue #" + issue)
           }
 
-          if (process.env.STATUS == 'success') {
+          const success_exit_codes = [0, 201, 202]
+          if (!success_exit_codes.includes(process.env.UPDATE_TARGETS_EXIT_CODE) ||
+              !success_exit_codes.includes(process.env.STATUS_EXIT_CODE)) {
+            summary = "Unexpected failure"
+            url = new URL("https://github.com/theupdateframework/tuf-on-ci/issues/new")
+            url.searchParams.set("title", "Unexpected failure in signing event")
+            url.searchParams.set("body", `Please see https://github.com/${repo}/issues/${issue}`)
+            message = "### Unexpected failure\n\n"
+            message += `Signing event has encountered an error, please check logs and [file an issue](${url}).`
+          } else if (process.env.STATUS_EXIT_CODE == 0) {
+            summary = "Signing event is successful"
             pr_url = new URL("https://github.com/" + repo + "/compare/main..." + process.env.GITHUB_REF_NAME)
             pr_url.searchParams.set("expand", "1")
             pr_url.searchParams.set("title", "Signing event " + process.env.GITHUB_REF_NAME)
             pr_url.searchParams.set("body", "Signing event " + process.env.GITHUB_REF_NAME + " is successful and ready to merge.\n\nCloses #" + issue + ".")
+            message = fs.readFileSync('./output.md').toString()
             message += "### Signing event is successful\n\n"
             message += "Threshold of signatures has been reached. A [pull request](" + pr_url + ") can be opened."
-            summary = "Signing event is successful"
           } else {
             summary = "Signing event in progress"
+            message = fs.readFileSync('./output.md').toString()
           }
+          console.log(summary)
 
-          github.rest.issues.createComment({
+          await github.rest.issues.createComment({
             issue_number: issue,
             owner: context.repo.owner,
             repo: context.repo.repo,

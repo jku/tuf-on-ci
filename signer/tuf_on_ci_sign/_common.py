@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import subprocess
+import webbrowser
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -157,7 +158,7 @@ def application_update_reminder() -> None:
         logger.warning(f"Failed to check current tuf-on-ci-sign version: {e}")
 
 
-def push_changes(user: User, event_name: str) -> None:
+def push_changes(user: User, event_name: str, title: str) -> None:
     """Push the event branch to users push remote"""
     branch = f"{user.push_remote}/{event_name}"
     msg = f"Press enter to push changes to {branch}"
@@ -165,11 +166,26 @@ def push_changes(user: User, event_name: str) -> None:
     git_echo(
         [
             "push",
-            "--progress",
             user.push_remote,
             f"HEAD:refs/heads/{event_name}",
         ]
     )
+    if user.push_remote != user.push_remote:
+        # Create PR from fork (push remote) to upstream (pull remote)
+        upstream = get_repo_name({user.pull_remote})
+        fork = get_repo_name({user.push_remote}).replace("/", ":")
+        query = parse.urlencode(
+            {
+                "quick_pull": 1,
+                "title": title,
+                "template": "signing_event.md",
+            }
+        )
+        pr_url = f"https://github.com/{upstream}/compare/{event_name}...{fork}:{event_name}?{query}"
+        if webbrowser.open(pr_url):
+            click.echo(bold("Please open the pull request in your browser"))
+        else:
+            click.echo(bold(f"Please open the pull request:\n    {pr_url}"))
 
 
 def get_repo_name(remote: str) -> str:

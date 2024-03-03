@@ -160,20 +160,26 @@ def application_update_reminder() -> None:
 
 def push_changes(user: User, event_name: str, title: str) -> None:
     """Push the event branch to users push remote"""
-    branch = f"{user.push_remote}/{event_name}"
-    msg = f"Press enter to push changes to {branch}"
-    click.prompt(bold(msg), default=True, show_default=False)
-    git_echo(
-        [
-            "push",
-            user.push_remote,
-            f"HEAD:refs/heads/{event_name}",
-        ]
-    )
-    if user.push_remote != user.push_remote:
-        # Create PR from fork (push remote) to upstream (pull remote)
-        upstream = get_repo_name({user.pull_remote})
-        fork = get_repo_name({user.push_remote}).replace("/", ":")
+
+    if user.pull_remote == user.push_remote:
+        # push directly to signing event
+        msg = "Press enter to push changes directly to signing event"
+        click.prompt(bold(msg), default=True, show_default=False)
+
+        git_echo(["push", "--quiet", user.push_remote, f"HEAD:refs/heads/{event_name}"])
+    else:
+        # push to fork: use unique branch name to avoid conflicts
+        msg = "Press enter to push changes to your fork"
+        click.prompt(bold(msg), default=True, show_default=False)
+
+        sha = git_expect(["rev-parse", "HEAD"])
+        fork_branch = f"{event_name}-{sha[:7]}"
+        ref_spec = f"HEAD:refs/heads/{fork_branch}"
+        git_echo(["push", "--quiet", user.push_remote, ref_spec])
+
+        # Create PR from fork to upstream
+        upstream = get_repo_name(user.pull_remote)
+        fork = get_repo_name(user.push_remote).replace("/", ":")
         query = parse.urlencode(
             {
                 "quick_pull": 1,
@@ -181,7 +187,7 @@ def push_changes(user: User, event_name: str, title: str) -> None:
                 "template": "signing_event.md",
             }
         )
-        pr_url = f"https://github.com/{upstream}/compare/{event_name}...{fork}:{event_name}?{query}"
+        pr_url = f"https://github.com/{upstream}/compare/{event_name}...{fork}:{fork_branch}?{query}"
         if webbrowser.open(pr_url):
             click.echo(bold("Please open the pull request in your browser"))
         else:

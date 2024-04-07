@@ -22,14 +22,20 @@ jobs:
       - name: Install build dependencies
         run: python3 -m pip install build
 
-      - name: Build binary wheel and source tarball
-        run: python3 -m build --sdist --wheel --outdir dist/ signer/
+      - name: Build binary wheel, source tarball and changelog
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 -m build --sdist --wheel --outdir dist/ signer/
+          awk "/## $TAG/{flag=1; next} /## v/{flag=0} flag" docs/CHANGELOG.md > changelog
 
       - name: Store build artifacts
         uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
           name: signer-artifacts
-          path: dist
+          path: |
+            dist
+            changelog
 
   release-pypi:
     name: Release Signer on PyPI
@@ -43,7 +49,6 @@ jobs:
         uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4.1.4
         with:
           name: signer-artifacts
-          path: dist
 
       - name: Publish binary wheel and source tarball on PyPI
         if: github.repository == 'theupdateframework/tuf-on-ci'
@@ -60,7 +65,6 @@ jobs:
         uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4.1.4
         with:
           name: signer-artifacts
-          path: dist
 
       - name: Make a GitHub release
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
@@ -72,9 +76,7 @@ jobs:
               repo: context.repo.repo,
               name: '${{ github.ref_name }}',
               tag_name: '${{ github.ref }}',
-              body: 'See [CHANGELOG.md](https://github.com/' +
-                     context.repo.owner + '/' + context.repo.repo +
-                    '/blob/${{ github.ref_name }}/docs/CHANGELOG.md) for details.'
+              body: fs.readFileSync('changelog', 'utf8'),
             })
             fs.readdirSync('dist/').forEach(file => {
               github.rest.repos.uploadReleaseAsset({

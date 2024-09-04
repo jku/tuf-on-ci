@@ -50,6 +50,13 @@ runs:
         source: build
         destination: build-jekyll
 
+    - id: fix-css-link
+      run: |
+        # jekyll really likes absolute links, which breaks the styles if the repository is moved
+        # jekyll-build-pages also creates the files as root...
+        sudo sed -i "s#href=\"/.*/assets/css/style.css#href=\"assets/css/style.css#" build-jekyll/${{inputs.metadata_path}}/index.html
+      shell: bash
+
     - uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
       if: inputs.gh_pages != 'true'
       with:

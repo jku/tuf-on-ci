@@ -132,7 +132,7 @@ requests==2.33.1
     #   msal
 s3transfer==0.16.0
     # via boto3
-securesystemslib @ git+https://github.com/jku/securesystemslib.git@mldsa
+securesystemslib @ git+https://github.com/jku/securesystemslib.git@mldsa-enabled
     # via
     #   tuf
     #   tuf-on-ci (repo/pyproject.toml)
